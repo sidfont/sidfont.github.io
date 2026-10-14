@@ -22,7 +22,7 @@ function obterQuantidadePulsos(valor) {
     return 0; 
 }
 
-// FUNÇÃO BLINDADA COM O ENDEREÇO COMPLETO DO BLYNK
+// FUNÇÃO BLINDADA COM O ENDEREÇO DO BLYNK
 async function enviarSinalBlynk(pino, valor) {
     const urlParte1 = "https://blynk.cloud";
     const urlParte2 = "/external/api/update?token=";
@@ -30,7 +30,6 @@ async function enviarSinalBlynk(pino, valor) {
     await axios.get(url).catch(() => {});
 }
 
-// INICIALIZA AS LUZES DO SISTEMA
 async function inicializarLuzesStatus() {
     console.log("-> Configurando LEDs de status no Blynk...");
     await enviarSinalBlynk("V26", "1"); // Verde Online LIGA
@@ -51,7 +50,7 @@ app.post('/api/zerar-caixa', (req, res) => {
     });
 });
 
-// LINK DIRETO DOS BOTÕES AZUIS DO PAINEL COM PAUSA DE SEGURANÇA NA NUVEM
+// ENVIANDO SINAL COMPASSADO E CORRETO PARA O PINO V1 NO PAINEL DE TESTE
 app.post('/api/simular-pix', async (req, res) => {
     const { valor } = req.body;
     console.log("[PAINEL TESTE] Recebido clique manual de R$ " + valor);
@@ -64,7 +63,7 @@ app.post('/api/simular-pix', async (req, res) => {
                 const novoValor = Math.round((atual + parseFloat(valor)) * 100) / 100;
                 db.update({ maquina: MAQUINA_ID }, { m: MAQUINA_ID, totalAcumulado: novoValor }, { upsert: true });
                 
-                // ENVIA O VALOR CHEIO E SE SEGURA POR 1 SEGUNDO CONTRA ATROPELAMENTOS
+                // CRAVADO NO V1 COM PAUSA DE ENTREGAS
                 await enviarSinalBlynk("V1", pulsosParaEnviar);
                 await new Promise(r => setTimeout(r, 1000));
             });
@@ -75,7 +74,7 @@ app.post('/api/simular-pix', async (req, res) => {
     }
 });
 
-// WEBHOOK DE PRODUÇÃO PARA O PIX REAL DO MERCADO PAGO COM PAUSA DE SEGURANÇA
+// ENVIANDO SINAL COMPASSADO E CORRETO PARA O PINO V1 NO WEBHOOK REAL DO PIX
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200); 
 
@@ -114,7 +113,7 @@ app.post('/webhook', async (req, res) => {
                         db.update({ maquina: MAQUINA_ID }, { m: MAQUINA_ID, totalAcumulado: novoValor }, { upsert: true });
                         console.log("-> Despachando " + pulsosParaEnviar + " creditos para a Box...");
                         
-                        // ENVIA O VALOR CHEIO DO PIX REAL E MANTÉM A CONEXÃO ABERTA POR 1 SEGUNDO
+                        // CRAVADO NO V1 COM PAUSA DE ENTREGAS
                         await enviarSinalBlynk("V1", pulsosParaEnviar);
                         await new Promise(r => setTimeout(r, 1000));
                     });
