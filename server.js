@@ -22,7 +22,6 @@ function obterQuantidadePulsos(valor) {
     return 0; 
 }
 
-// FUNÇÃO BLINDADA COM O ENDEREÇO DO BLYNK
 async function enviarSinalBlynk(pino, valor) {
     const urlParte1 = "https://blynk.cloud";
     const urlParte2 = "/external/api/update?token=";
@@ -38,19 +37,17 @@ async function inicializarLuzesStatus() {
 }
 
 app.get('/api/faturamento', (req, res) => {
-    db.findOne({ maquina: MAQUINA_ID }, (err, doc) => {
+    db.findOne({ m: MAQUINA_ID }, (err, doc) => {
         res.json({ maquina: MAQUINA_ID, totalAcumulado: doc ? doc.totalAcumulado : 0 });
     });
 });
 
 app.post('/api/zerar-caixa', (req, res) => {
-    const atualizacao = { m: MAQUINA_ID, totalAcumulado: 0 };
-    db.update({ maquina: MAQUINA_ID }, atualizacao, { upsert: true }, () => {
+    db.update({ m: MAQUINA_ID }, { $set: { totalAcumulado: 0 } }, { upsert: true }, () => {
         res.json({ success: true });
     });
 });
 
-// ENVIANDO SINAL COMPASSADO E CORRETO PARA O PINO V1 NO PAINEL DE TESTE
 app.post('/api/simular-pix', async (req, res) => {
     const { valor } = req.body;
     console.log("[PAINEL TESTE] Recebido clique manual de R$ " + valor);
@@ -58,14 +55,19 @@ app.post('/api/simular-pix', async (req, res) => {
     try {
         const pulsosParaEnviar = obterQuantidadePulsos(parseFloat(valor));
         if (pulsosParaEnviar > 0) {
-            db.findOne({ maquina: MAQUINA_ID }, async (err, doc) => {
+            db.findOne({ m: MAQUINA_ID }, async (err, doc) => {
                 const atual = doc ? doc.totalAcumulado : 0;
                 const novoValor = Math.round((atual + parseFloat(valor)) * 100) / 100;
-                db.update({ maquina: MAQUINA_ID }, { m: MAQUINA_ID, totalAcumulado: novoValor }, { upsert: true });
+                db.update({ m: MAQUINA_ID }, { m: MAQUINA_ID, totalAcumulado: novoValor }, { upsert: true });
                 
-                // CRAVADO NO V1 COM PAUSA DE ENTREGAS
-                await enviarSinalBlynk("V1", pulsosParaEnviar);
-                await new Promise(r => setTimeout(r, 1000));
+                // RODA O RITMO DE PULSOS CORTADOS UM POR UM IGUAL A ONTEM
+                for (let i = 1; i <= pulsosParaEnviar; i++) {
+                    console.log("Pulso manual " + i + " de " + pulsosParaEnviar);
+                    await enviarSinalBlynk("V1", "1");
+                    await new Promise(r => setTimeout(r, 600)); 
+                    await enviarSinalBlynk("V1", "0");
+                    await new Promise(r => setTimeout(r, 600)); 
+                }
             });
         }
         res.json({ success: true });
@@ -74,7 +76,6 @@ app.post('/api/simular-pix', async (req, res) => {
     }
 });
 
-// ENVIANDO SINAL COMPASSADO E CORRETO PARA O PINO V1 NO WEBHOOK REAL DO PIX
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200); 
 
@@ -83,13 +84,7 @@ app.post('/webhook', async (req, res) => {
 
     if (type === 'payment' || action === 'payment.created' || req.body.topic === 'payment') {
         const idPagamento = data && data.id ? data.id : req.body.id;
-        
-        if (!idPagamento) {
-            console.log("-> ID do pagamento nao encontrado na mensagem.");
-            return;
-        }
-
-        console.log("-> ID do Pix detectado: " + idPagamento + ". Consultando valores no Mercado Pago...");
+        if (!idPagamento) return;
 
         try {
             const mpUrl1 = "https://mercadopago.com";
@@ -104,27 +99,23 @@ app.post('/webhook', async (req, res) => {
                 const valorPixReal = parseFloat(respostaMP.data.transaction_amount);
                 const pulsosParaEnviar = obterQuantidadePulsos(valorPixReal);
 
-                console.log("\n=== PIX REAL APROVADO ===");
-
                 if (pulsosParaEnviar > 0) {
-                    db.findOne({ maquina: MAQUINA_ID }, async (err, doc) => {
+                    db.findOne({ m: MAQUINA_ID }, async (err, doc) => {
                         const atual = doc ? doc.totalAcumulado : 0;
                         const novoValor = Math.round((atual + valorPixReal) * 100) / 100;
-                        db.update({ maquina: MAQUINA_ID }, { m: MAQUINA_ID, totalAcumulado: novoValor }, { upsert: true });
-                        console.log("-> Despachando " + pulsosParaEnviar + " creditos para a Box...");
+                        db.update({ m: MAQUINA_ID }, { m: MAQUINA_ID, totalAcumulado: novoValor }, { upsert: true });
                         
-                        // CRAVADO NO V1 COM PAUSA DE ENTREGAS
-                        await enviarSinalBlynk("V1", pulsosParaEnviar);
-                        await new Promise(r => setTimeout(r, 1000));
+                        for (let i = 1; i <= pulsosParaEnviar; i++) {
+                            await enviarSinalBlynk("V1", "1");
+                            await new Promise(r => setTimeout(r, 600)); 
+                            await enviarSinalBlynk("V1", "0");
+                            await new Promise(r => setTimeout(r, 600)); 
+                        }
                     });
-                } else {
-                    console.log("-> O valor recebido nao atinge o minimo.");
                 }
-            } else {
-                console.log("-> Status do pagamento ainda nao esta aprovado.");
             }
         } catch (erro) {
-            console.log("-> Erro ao consultar pagamento no Mercado Pago:", erro.message);
+            console.log("-> Erro no Pix:", erro.message);
         }
     }
 });
